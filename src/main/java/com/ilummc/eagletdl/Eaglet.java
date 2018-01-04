@@ -1,5 +1,8 @@
 package com.ilummc.eagletdl;
 
+/**
+ * Test class
+ */
 public class Eaglet {
 
     public static void main(String[] args) {
