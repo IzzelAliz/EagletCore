@@ -3,3 +3,4 @@
 src/test/
 target/
 .git-credentials
+src/main/resources/
