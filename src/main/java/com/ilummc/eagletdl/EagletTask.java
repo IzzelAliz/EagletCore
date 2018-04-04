@@ -11,8 +11,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class EagletTask {
+
+    private ReentrantLock lock = new ReentrantLock();
 
     Map<String, String> httpHeader = new ConcurrentHashMap<>();
 
@@ -38,6 +41,7 @@ public class EagletTask {
 
     int connectionTimeout = 7000;
     int readTimeout = 7000;
+    int maxRetry = 3;
 
     private File dest;
 
@@ -70,6 +74,7 @@ public class EagletTask {
         if (running) throw new AlreadyStartException();
         // start the monitor thread
         monitor = new Thread(() -> {
+            lock.lock();
             // fire a new start event
             if (onStart != null) onStart.handle(new StartEvent(this));
             try {
@@ -79,8 +84,8 @@ public class EagletTask {
                 // set the connection properties
                 httpHeader.forEach(connection::addRequestProperty);
                 connection.setRequestMethod(requestMethod);
-                connection.setConnectTimeout(connectionTimeout);
-                connection.setReadTimeout(readTimeout);
+                connection.setConnectTimeout(30000);
+                connection.setReadTimeout(30000);
                 connection.connect();
                 contentLength = connection.getContentLengthLong();
                 // fire a new connected event
@@ -98,7 +103,8 @@ public class EagletTask {
                         long progress = download.getCurrentProgress();
                         // fire a new progress event
                         if (onProgress != null)
-                            onProgress.handle(new ProgressEvent(progress - last, this));
+                            onProgress.handle(new ProgressEvent(progress - last, this,
+                                    ((double) progress) / ((double) contentLength)));
                         last = progress;
                         // check complete
                         if (last == contentLength) {
@@ -131,13 +137,22 @@ public class EagletTask {
                         // Collect download progress
                         for (SplitDownload splitDownload : splitDownloads) {
                             progress += splitDownload.getCurrentIndex() - splitDownload.startIndex;
+                            // blocked then restart from current index
+                            if (!splitDownload.isComplete() &&
+                                    System.currentTimeMillis() - splitDownload.getLastUpdateTime() > maxBlockingTime) {
+                                splitDownload.setStartIndex(splitDownload.getCurrentIndex());
+                                if (splitDownload.getRetry() <= maxRetry)
+                                    executorService.execute(splitDownload);
+                                else throw new RetryFailedException(this);
+                            }
                         }
                         // Fire a progress event
                         if (onProgress != null)
-                            onProgress.handle(new ProgressEvent(progress - last, this));
+                            onProgress.handle(new ProgressEvent(progress - last, this,
+                                    ((double) progress) / ((double) contentLength)));
                         last = progress;
                         // check complete
-                        if (last == contentLength) {
+                        if (last >= contentLength) {
                             break;
                         }
                     }
@@ -153,12 +168,26 @@ public class EagletTask {
                     throw new HashNotMatchException();
                 if (sha256 != null && !sha256.equalsIgnoreCase(HashUtil.sha256(dest)))
                     throw new HashNotMatchException();
-                if (onComplete != null) onComplete.handle(new CompleteEvent(this));
+                if (onComplete != null) onComplete.handle(new CompleteEvent(this, true));
             } catch (Exception e) {
                 onError.handle(new ErrorEvent(e, this));
+                executorService.shutdown();
+                if (onComplete != null) onComplete.handle(new CompleteEvent(this, false));
+            } finally {
+                lock.unlock();
             }
         }, "EagletTaskMonitor");
         monitor.start();
+    }
+
+    public void waitUntil() {
+        lock.lock();
+        lock.unlock();
+    }
+
+    public EagletTask maxRetry(int maxRetry) {
+        this.maxRetry = maxRetry;
+        return this;
     }
 
     /**

@@ -6,10 +6,12 @@ public class ProgressEvent {
 
     private long speed;
     private EagletTask task;
+    private double percentage;
 
-    ProgressEvent(long speed, EagletTask task) {
+    ProgressEvent(long speed, EagletTask task, double percentage) {
         this.speed = speed;
         this.task = task;
+        this.percentage = percentage;
     }
 
     public EagletTask getTask() {
@@ -18,6 +20,14 @@ public class ProgressEvent {
 
     public long getSpeed() {
         return speed;
+    }
+
+    public double getPercentage() {
+        return percentage;
+    }
+
+    public String getPercentageFormatted() {
+        return formatDouble(percentage * 100D) + " %";
     }
 
     /**
@@ -33,7 +43,7 @@ public class ProgressEvent {
         return new DecimalFormat("0.00").format(d);
     }
 
-    private static String format(long l) {
+    public static String format(long l) {
         if (l < 1024) return l + " B";
         if (l < 1024 * 1024) return formatDouble((double) l / 1024D) + " KiB";
         if (l < 1024 * 1024 * 1024) return formatDouble((double) l / (1024D * 1024D)) + " MiB";
