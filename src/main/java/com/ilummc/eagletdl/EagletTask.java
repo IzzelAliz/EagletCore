@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class EagletTask {
@@ -59,7 +60,6 @@ public class EagletTask {
     public void stop() {
         executorService.shutdownNow();
         monitor.interrupt();
-        monitor.stop();
     }
 
     /**
@@ -67,7 +67,7 @@ public class EagletTask {
      * <p>
      * 开始下载文件
      */
-    public void start() {
+    public EagletTask start() {
         // create thread pool for download
         executorService = Executors.newFixedThreadPool(threadAmount);
         // check if is already running
@@ -178,11 +178,24 @@ public class EagletTask {
             }
         }, "EagletTaskMonitor");
         monitor.start();
+        return this;
     }
 
-    public void waitUntil() {
+    public EagletTask waitUntil() {
+        while (lock.tryLock()) lock.unlock();
         lock.lock();
         lock.unlock();
+        return this;
+    }
+
+    public EagletTask waitFor(long timeout, TimeUnit unit) {
+        while (lock.tryLock()) lock.unlock();
+        try {
+            lock.tryLock(timeout, unit);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return this;
     }
 
     public EagletTask maxRetry(int maxRetry) {
